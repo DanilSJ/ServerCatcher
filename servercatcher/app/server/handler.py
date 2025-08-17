@@ -20,10 +20,14 @@ async def cmd_main(message: Message):
         return
 
     # Формируем одно сообщение с IP всех серверов
-    ip_list = "\n".join(f"{idx+1}. {server.ip_adress}" for idx, server in enumerate(servers))
-    text = f"Рекламируемые серверы на главной:\n{ip_list}\n\nОтчет сформирован: {now}"
+    ip_list = "\n".join(f"<b>{idx+1}</b>. {server.ip_adress}" for idx, server in enumerate(servers))
+    text = f"""
+📌Рекламируемые серверы на главной:
+{ip_list}
 
-    await message.answer(text)
+⏰Отчет сформирован: <b>{now} МСК</b>"""
+
+    await message.answer(text, parse_mode="HTML")
 
 
 @router.message(Command("history"))
@@ -37,14 +41,18 @@ async def cmd_history(message: Message):
 
     lines = []
     for server in servers:
-        start = server.start.astimezone(MSK).strftime("%d.%m.%Y %H:%M:%S")
-        end = server.end.astimezone(MSK).strftime("%d.%m.%Y %H:%M:%S")
+        start = server.start.astimezone(MSK).strftime("%d.%m.%Y")
+        end = server.end.astimezone(MSK).strftime("%d.%m.%Y")
         days_active = (server.end - server.start).days
         lines.append(
-            f"История для IP {server.ip_adress}:\n"
-            f"Добавлен: {start}\n"
-            f"Удален: {end} (размещен {days_active} дней)\n"
+            f"📜История для IP {server.ip_adress}:\n"
+            f"➕Добавлен: {start}\n"
+            f"➖Удален: {end} (размещен {days_active} дней)\n"
         )
 
     text = "\n".join(lines)
-    await message.answer(text)
+
+    # разбиваем на части по 4000 символов
+    chunk_size = 4000
+    for i in range(0, len(text), chunk_size):
+        await message.answer(text[i:i+chunk_size])
