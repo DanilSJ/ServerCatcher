@@ -19,7 +19,6 @@ async def cmd_main(message: Message):
         await message.answer(f"Сейчас нет активных серверов.\nОтчет сформирован: {now}")
         return
 
-    # Формируем одно сообщение с IP всех серверов
     ip_list = "\n".join(f"<b>{idx+1}</b>. {server.ip_adress}" for idx, server in enumerate(servers))
     text = f"""
 📌Рекламируемые серверы на главной:
@@ -52,7 +51,6 @@ async def cmd_history(message: Message):
 
     text = "\n".join(lines)
 
-    # разбиваем на части по 4000 символов
     chunk_size = 4000
     for i in range(0, len(text), chunk_size):
         await message.answer(text[i:i+chunk_size])
