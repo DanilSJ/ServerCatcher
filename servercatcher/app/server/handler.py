@@ -3,7 +3,9 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from datetime import datetime, timezone, timedelta
 from servercatcher.core.models import db_helper
-from .crud import get_active_servers, get_all_servers
+from servercatcher.core.models.server import ServerHistory
+from sqlalchemy import select
+from servercatcher.app.server.crud import get_active_servers, get_all_servers
 
 MSK = timezone(timedelta(hours=3))
 router = Router()
@@ -31,26 +33,36 @@ async def cmd_main(message: Message):
 
 @router.message(Command("history"))
 async def cmd_history(message: Message):
+    args = message.text.split()
+    ip_filter = args[1] if len(args) > 1 else None
     async with db_helper.session_factory() as session:
-        servers = await get_all_servers(session)
+        query = select(ServerHistory).order_by(ServerHistory.server_ip, ServerHistory.start)
+        if ip_filter:
+            query = query.where(ServerHistory.server_ip == ip_filter)
+        result = await session.execute(query)
+        histories = result.scalars().all()
 
-    if not servers:
-        await message.answer("История серверов пуста.")
+    if not histories:
+        await message.answer("История серверов пуста." if not ip_filter else f"История для {ip_filter} пуста.")
         return
 
     lines = []
-    for server in servers:
-        start = server.start.astimezone(MSK).strftime("%d.%m.%Y")
-        end = server.end.astimezone(MSK).strftime("%d.%m.%Y")
-        days_active = (server.end - server.start).days
-        lines.append(
-            f"📜История для IP {server.ip_adress}:\n"
-            f"➕Добавлен: {start}\n"
-            f"➖Удален: {end} (размещен {days_active} дней)\n"
-        )
+    current_ip = None
+    for hist in histories:
+        if hist.server_ip != current_ip:
+            lines.append(f"\n📜История для IP {hist.server_ip}:")
+            current_ip = hist.server_ip
+        start = hist.start.astimezone(MSK).strftime("%d.%m.%Y")
+        if hist.end:
+            end = hist.end.astimezone(MSK).strftime("%d.%m.%Y")
+            days_active = abs((hist.end - hist.start).days)
+            lines.append(f"➕Добавлен: {start}")
+            lines.append(f"➖Удален: {end} (размещен {days_active} дней)")
+        else:
+            lines.append(f"➕Добавлен: {start}")
+            lines.append(f"➖Удален: ещё активен (размещен ? дней)")
 
     text = "\n".join(lines)
-
     chunk_size = 4000
     for i in range(0, len(text), chunk_size):
         await message.answer(text[i:i+chunk_size])

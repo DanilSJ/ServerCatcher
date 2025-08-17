@@ -8,7 +8,7 @@ MSK = timezone(timedelta(hours=3))
 async def get_active_servers(session: AsyncSession) -> list[Server]:
     now = datetime.now(MSK)
     result = await session.execute(
-        select(Server).where(Server.start <= now, Server.end >= now)
+        select(Server).where(Server.start <= now, Server.end >= now, Server.is_active == True)
     )
     servers = result.scalars().all()
     return list(servers)
