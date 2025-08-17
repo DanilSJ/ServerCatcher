@@ -15,4 +15,4 @@ async def cmd_start(message: Message):
             session=session,
         )
 
-    await message.answer("")
+    await message.answer("Начало")
