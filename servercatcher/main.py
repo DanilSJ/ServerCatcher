@@ -11,6 +11,7 @@ from aiogram.exceptions import (
 
 from servercatcher.core.config import bot
 from servercatcher.app.start.handler import router as start
+from servercatcher.app.server.handler import router as server
 
 
 dp = Dispatcher()
@@ -19,6 +20,7 @@ dp = Dispatcher()
 async def main():
 
     dp.include_router(start)
+    dp.include_router(server)
 
     await asyncio.gather(
         dp.start_polling(bot),
