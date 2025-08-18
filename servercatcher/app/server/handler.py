@@ -41,8 +41,7 @@ async def cmd_history(message: Message):
         return
     ip_filter = args[1]
     async with db_helper.session_factory() as session:
-        query = select(ServerHistory).order_by(ServerHistory.server_ip, ServerHistory.start)
-        query = query.where(ServerHistory.server_ip == ip_filter)
+        query = select(ServerHistory).where(ServerHistory.server_ip == ip_filter)
         result = await session.execute(query)
         histories = result.scalars().all()
 
@@ -50,36 +49,45 @@ async def cmd_history(message: Message):
         await message.answer(f"История для {ip_filter} пуста.")
         return
 
-    lines = []
-    current_ip = None
-    for hist in histories:
-        if hist.server_ip != current_ip:
-            lines.append(f"\n📜История для IP {hist.server_ip}:")
-            current_ip = hist.server_ip
-        if hist.start is None and hist.end is not None:
-            end = hist.end.astimezone(MSK).strftime("%d.%m.%Y")
-            # Ищем запись с start для того же IP, чтобы посчитать дни
-            start_record = next((h for h in histories if h.server_ip == hist.server_ip and h.start is not None), None)
-            if start_record:
-                days_active = abs((hist.end - start_record.start).days)
-                lines.append(f"➖ Удален: {end} (размещен {days_active} дней)")
-            else:
-                lines.append(f"➖ Удален: {end} - {hist.server_ip}")
-        elif hist.start and hist.end:
-            start = hist.start.astimezone(MSK).strftime("%d.%m.%Y")
-            end = hist.end.astimezone(MSK).strftime("%d.%m.%Y")
-            days_active = abs((hist.end - hist.start).days)
-            lines.append(f"➕Добавлен: {start}")
-            # Ищем запись об удалении для этого сервера
-            removal_record = next((h for h in histories if h.server_ip == hist.server_ip and h.start is None and h.end), None)
-            if removal_record:
-                removal_end = removal_record.end.astimezone(MSK).strftime("%d.%m.%Y")
-                lines.append(f"➖Удален: {removal_end} (размещен {days_active} дней) - {removal_record.server_ip}")
-            else:
-                lines.append(f"➖Удален: {end} (размещен {days_active} дней) ")
-        elif hist.start:
-            start = hist.start.astimezone(MSK).strftime("%d.%m.%Y")
-            lines.append(f"➕Добавлен: {start}")
+    # Готовим списки событий и пары добавление-удаление
+    both_records = [h for h in histories if h.start is not None and h.end is not None]
+    start_only = [h for h in histories if h.start is not None and h.end is None]
+    end_only = [h for h in histories if h.start is None and h.end is not None]
+
+    both_records.sort(key=lambda h: (h.start, h.end))
+    start_only.sort(key=lambda h: h.start)
+    end_only.sort(key=lambda h: h.end)
+
+    lines = [f"📜История для IP {ip_filter}:"]
+
+    # Сначала выводим пары, которые уже содержатся в одной записи
+    for rec in both_records:
+        start_dt = rec.start.astimezone(MSK)
+        end_dt = rec.end.astimezone(MSK)
+        days_active = abs((end_dt - start_dt).days)
+        lines.append(f"➕Добавлен: {start_dt.strftime('%d.%m.%Y')}")
+        lines.append(f"➖ Удален: {end_dt.strftime('%d.%m.%Y')} (размещен {days_active} дней)")
+
+    # Затем попарно связываем раздельные start/end записи и чередуем
+    pair_count = min(len(start_only), len(end_only))
+    for i in range(pair_count):
+        s = start_only[i]
+        e = end_only[i]
+        start_dt = s.start.astimezone(MSK)
+        end_dt = e.end.astimezone(MSK)
+        days_active = abs((end_dt - start_dt).days)
+        lines.append(f"➕Добавлен: {start_dt.strftime('%d.%m.%Y')}")
+        lines.append(f"➖ Удален: {end_dt.strftime('%d.%m.%Y')} (размещен {days_active} дней)")
+
+    # Если остались незакрытые добавления — выводим их
+    for s in start_only[pair_count:]:
+        start_dt = s.start.astimezone(MSK)
+        lines.append(f"➕Добавлен: {start_dt.strftime('%d.%m.%Y')}")
+
+    # Если остались удаления без пары — выводим их без длительности
+    for e in end_only[pair_count:]:
+        end_dt = e.end.astimezone(MSK)
+        lines.append(f"➖ Удален: {end_dt.strftime('%d.%m.%Y')}")
 
     text = "\n".join(lines)
     chunk_size = 4000
