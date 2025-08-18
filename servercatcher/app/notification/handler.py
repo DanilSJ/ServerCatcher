@@ -15,15 +15,15 @@ from servercatcher.core.config import bot
 
 MSK = timezone(timedelta(hours=3))
 CHECK_INTERVAL = 3
-PASTEBIN_URL = "https://pastebin.com/raw/DnHHkrxx"
-# PASTEBIN_URL = "http://127.0.0.1:8000"
+# PASTEBIN_URL = "https://pastebin.com/raw/DnHHkrxx"
+PASTEBIN_URL = "http://127.0.0.1:8000"
 
 
 async def fetch_servers_from_link() -> list[dict]:
     url = f"{PASTEBIN_URL}?nocache={int(time.time())}"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers={'Cache-Control': 'no-cache'}) as resp:
+            async with session.get(url, headers={"Cache-Control": "no-cache"}) as resp:
                 text = await resp.text()
                 data = json.loads(text)
                 return data.get("servers", [])
@@ -32,7 +32,9 @@ async def fetch_servers_from_link() -> list[dict]:
         return []
 
 
-async def add_new_servers_to_db(session: AsyncSession, servers_data: list[dict]) -> list[Server]:
+async def add_new_servers_to_db(
+    session: AsyncSession, servers_data: list[dict]
+) -> list[Server]:
     new_servers = []
 
     for srv in servers_data:
@@ -43,7 +45,11 @@ async def add_new_servers_to_db(session: AsyncSession, servers_data: list[dict])
         result = await session.execute(select(Server).where(Server.ip_adress == ip))
         server = result.scalars().first()
         start_str = srv.get("start", "")
-        start = datetime.strptime(start_str, "%d/%m/%Y").replace(tzinfo=MSK) if start_str else datetime.now(MSK)
+        start = (
+            datetime.strptime(start_str, "%d/%m/%Y").replace(tzinfo=MSK)
+            if start_str
+            else datetime.now(MSK)
+        )
 
         if server:
             if not server.is_active:
@@ -57,7 +63,9 @@ async def add_new_servers_to_db(session: AsyncSession, servers_data: list[dict])
                 pass
             # Проверяем, есть ли незавершённая история
             hist_result = await session.execute(
-                select(ServerHistory).where(ServerHistory.server_ip == ip, ServerHistory.end == None)
+                select(ServerHistory).where(
+                    ServerHistory.server_ip == ip, ServerHistory.end == None
+                )
             )
             open_history = hist_result.scalars().first()
             if not open_history:
@@ -83,21 +91,23 @@ async def add_new_servers_to_db(session: AsyncSession, servers_data: list[dict])
         await session.commit()  # commit для реактивации
     return new_servers
 
+
 async def get_all_chats(session: AsyncSession):
     """Получает список всех чатов (пользователей и групп) для отправки уведомлений"""
     chats = set()
-    
+
     # Получаем пользователей из базы
     result = await session.execute(select(User.telegram_id))
     users = result.scalars().all()
     chats.update(users)
-    
+
     # Получаем группы/каналы из базы
     result = await session.execute(select(Chat.chat_id))
     groups = result.scalars().all()
     chats.update(groups)
-    
+
     return list(chats)
+
 
 async def notify_users_about_new_servers(session: AsyncSession, servers: list[Server]):
     if not servers:
@@ -118,12 +128,15 @@ async def notify_users_about_new_servers(session: AsyncSession, servers: list[Se
             except Exception as e:
                 pass
 
-async def notify_users_about_new_ips(session: AsyncSession, new_ips: list[str], servers_data: list[dict]):
+
+async def notify_users_about_new_ips(
+    session: AsyncSession, new_ips: list[str], servers_data: list[dict]
+):
     if not new_ips:
         return
-    
+
     chats = await get_all_chats(session)
-    
+
     for ip in new_ips:
         srv = next((s for s in servers_data if s.get("ip") == ip), None)
         if not srv:
@@ -136,12 +149,12 @@ async def notify_users_about_new_ips(session: AsyncSession, new_ips: list[str], 
                 await bot.send_message(chat_id, message, parse_mode="HTML")
             except Exception as e:
                 pass
+
+
 async def check_closed_servers(session: AsyncSession, current_server_ips: list[str]):
     now = datetime.now(MSK)
     # Получаем все активные сервера
-    result = await session.execute(
-        select(Server).where(Server.is_active == True)
-    )
+    result = await session.execute(select(Server).where(Server.is_active == True))
     active_servers = result.scalars().all()
 
     if not active_servers:
@@ -171,9 +184,7 @@ async def check_closed_servers(session: AsyncSession, current_server_ips: list[s
             server.end = now
     await session.commit()
     # Повторно выводим список активных серверов
-    result = await session.execute(
-        select(Server).where(Server.is_active == True)
-    )
+    result = await session.execute(select(Server).where(Server.is_active == True))
     active_servers = result.scalars().all()
 
 
@@ -193,7 +204,9 @@ async def check_and_update_servers():
                 start_str = srv.get("start") or None
                 if start_str:
                     try:
-                        start_dt = datetime.strptime(start_str, "%d/%m/%Y").replace(tzinfo=MSK)
+                        start_dt = datetime.strptime(start_str, "%d/%m/%Y").replace(
+                            tzinfo=MSK
+                        )
                     except Exception:
                         start_dt = now
                 else:
@@ -201,7 +214,9 @@ async def check_and_update_servers():
                 if start_dt <= now:
                     filtered_servers_data.append(srv)
 
-            current_server_ips = set(srv.get("ip") for srv in filtered_servers_data if srv.get("ip"))
+            current_server_ips = set(
+                srv.get("ip") for srv in filtered_servers_data if srv.get("ip")
+            )
             # Отслеживаем изменения дат start/end для IP в текущем списке
             changed_date_ips: list[str] = []
             current_dates_map: dict[str, tuple[str | None, str | None]] = {}
@@ -216,76 +231,45 @@ async def check_and_update_servers():
                     prev_start, prev_end = previous_server_dates[ip]
                     if prev_start != start_str or prev_end != end_str:
                         changed_date_ips.append(ip)
-                else:
-                    # Нет предыдущего состояния: если текущее end уже в прошлом — считаем как удаленный
-                    if end_str:
-                        try:
-                            end_dt_probe = datetime.strptime(end_str, "%d/%m/%Y").replace(tzinfo=MSK)
-                            if end_dt_probe < now:
-                                changed_date_ips.append(ip)
-                        except Exception:
-                            pass
             # Новые IP, которых не было в предыдущем опросе
             new_ips = list(current_server_ips - previous_server_ips)
-            await notify_users_about_new_ips(session, new_ips, filtered_servers_data)
 
             # Если у IP изменились даты, завершаем старый период как "удаление"
             if changed_date_ips:
                 now = datetime.now(MSK)
                 chats = await get_all_chats(session)
                 for ip in changed_date_ips:
-                    # Если дата end изменилась в сторону увеличения (продлили), не считаем это удалением
-                    prev_start, prev_end = previous_server_dates.get(ip, (None, None))
-                    curr_start, curr_end = current_dates_map.get(ip, (None, None))
-                    prev_end_dt = None
-                    if prev_end:
-                        try:
-                            prev_end_dt = datetime.strptime(prev_end, "%d/%m/%Y").replace(tzinfo=MSK)
-                        except Exception:
-                            prev_end_dt = None
-                    curr_end_dt = None
-                    if curr_end:
-                        try:
-                            curr_end_dt = datetime.strptime(curr_end, "%d/%m/%Y").replace(tzinfo=MSK)
-                        except Exception:
-                            curr_end_dt = None
-                    # Если новое end находится в будущем — считаем, что сервер ещё активен, не удаляем
-                    if curr_end_dt and curr_end_dt >= now:
-                        continue
-                    result = await session.execute(select(Server).where(Server.ip_adress == ip))
+                    result = await session.execute(
+                        select(Server).where(Server.ip_adress == ip)
+                    )
                     server = result.scalars().first()
-                    # Определяем дату старта для сообщения
-                    if server and server.start:
-                        start = server.start
-                    else:
-                        srv_cur = next((s for s in servers_data if s.get("ip") == ip), None)
-                        start = None
-                        if srv_cur:
-                            start_str_msg = srv_cur.get("start") or None
-                            if start_str_msg:
-                                try:
-                                    start = datetime.strptime(start_str_msg, "%d/%m/%Y").replace(tzinfo=MSK)
-                                except Exception:
-                                    start = None
+                    if not server or not server.is_active:
+                        continue
+                    start = server.start
                     if start and start.tzinfo is None:
                         start = start.replace(tzinfo=MSK)
                     days = abs((now - start).days) if start else "?"
-                    message = f"""❌ <b>УДАЛЕН СЕРВЕР!</b>\n\n🖥 IP-адрес: <code>{ip}</code>\n⏳ Срок рекламы: <b>{days} день</b>\n\n🗑 Дата удаления: <b>{now.strftime('%d.%m.%Y %H:%M:%S')} МСК</b>"""
+                    message = f"""❌ <b>УДАЛЕН СЕРВЕР!</b>\n\n🖥 IP-адрес: <code>{ip}</code>\n⏳ Срок рекламы: <b>{days} день</b>\n\n🗑 Дата удаления: <b>{now.strftime('%d.%m.%Y')} МСК</b>"""
                     for chat_id in chats:
                         try:
                             await bot.send_message(chat_id, message, parse_mode="HTML")
                         except Exception:
                             pass
-                    # Закрываем текущую историю и деактивируем (если сервер существует и активен)
-                    if server and server.is_active:
-                        history = ServerHistory(server_ip=ip, start=None, end=now)
-                        session.add(history)
-                        server.is_active = False
-                        server.end = now
+                    # Закрываем текущую историю и деактивируем
+                    history = ServerHistory(server_ip=ip, start=None, end=now)
+                    session.add(history)
+                    server.is_active = False
+                    server.end = now
                 await session.commit()
 
             new_servers = await add_new_servers_to_db(session, filtered_servers_data)
             await notify_users_about_new_servers(session, new_servers)
+            # Уведомляем только о реактивациях (исключаем реально новые сервера, о которых уже сообщили)
+            created_ips = {server.ip_adress for server in new_servers}
+            reactivated_ips = [ip for ip in new_ips if ip not in created_ips]
+            await notify_users_about_new_ips(
+                session, reactivated_ips, filtered_servers_data
+            )
             await check_closed_servers(session, list(current_server_ips))
             previous_server_ips = current_server_ips
             previous_server_dates = current_dates_map
