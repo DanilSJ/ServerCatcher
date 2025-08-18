@@ -179,16 +179,76 @@ async def check_closed_servers(session: AsyncSession, current_server_ips: list[s
 
 async def check_and_update_servers():
     previous_server_ips = set()
+    previous_server_dates: dict[str, tuple[str | None, str | None]] = {}
     while True:
         async with db_helper.session_factory() as session:
             servers_data = await fetch_servers_from_link()
+            now = datetime.now(MSK)
+            # Фильтруем сервера: учитываем только те, у которых дата старта уже наступила
+            filtered_servers_data = []
+            for srv in servers_data:
+                ip = srv.get("ip")
+                if not ip:
+                    continue
+                start_str = srv.get("start") or None
+                if start_str:
+                    try:
+                        start_dt = datetime.strptime(start_str, "%d/%m/%Y").replace(tzinfo=MSK)
+                    except Exception:
+                        start_dt = now
+                else:
+                    start_dt = now
+                if start_dt <= now:
+                    filtered_servers_data.append(srv)
 
-            current_server_ips = set(srv.get("ip") for srv in servers_data if srv.get("ip"))
+            current_server_ips = set(srv.get("ip") for srv in filtered_servers_data if srv.get("ip"))
+            # Отслеживаем изменения дат start/end для IP в текущем списке
+            changed_date_ips: list[str] = []
+            current_dates_map: dict[str, tuple[str | None, str | None]] = {}
+            for srv in servers_data:
+                ip = srv.get("ip")
+                if not ip:
+                    continue
+                start_str = srv.get("start") or None
+                end_str = srv.get("end") or None
+                current_dates_map[ip] = (start_str, end_str)
+                if ip in previous_server_dates:
+                    prev_start, prev_end = previous_server_dates[ip]
+                    if prev_start != start_str or prev_end != end_str:
+                        changed_date_ips.append(ip)
             # Новые IP, которых не было в предыдущем опросе
             new_ips = list(current_server_ips - previous_server_ips)
-            await notify_users_about_new_ips(session, new_ips, servers_data)
-            new_servers = await add_new_servers_to_db(session, servers_data)
+            await notify_users_about_new_ips(session, new_ips, filtered_servers_data)
+
+            # Если у IP изменились даты, завершаем старый период как "удаление"
+            if changed_date_ips:
+                now = datetime.now(MSK)
+                chats = await get_all_chats(session)
+                for ip in changed_date_ips:
+                    result = await session.execute(select(Server).where(Server.ip_adress == ip))
+                    server = result.scalars().first()
+                    if not server or not server.is_active:
+                        continue
+                    start = server.start
+                    if start and start.tzinfo is None:
+                        start = start.replace(tzinfo=MSK)
+                    days = abs((now - start).days) if start else "?"
+                    message = f"""❌ <b>УДАЛЕН СЕРВЕР!</b>\n\n🖥 IP-адрес: <code>{ip}</code>\n⏳ Срок рекламы: <b>{days} день</b>\n\n🗑 Дата удаления: <b>{now.strftime('%d.%m.%Y')} МСК</b>"""
+                    for chat_id in chats:
+                        try:
+                            await bot.send_message(chat_id, message, parse_mode="HTML")
+                        except Exception:
+                            pass
+                    # Закрываем текущую историю и деактивируем
+                    history = ServerHistory(server_ip=ip, start=None, end=now)
+                    session.add(history)
+                    server.is_active = False
+                    server.end = now
+                await session.commit()
+
+            new_servers = await add_new_servers_to_db(session, filtered_servers_data)
             await notify_users_about_new_servers(session, new_servers)
             await check_closed_servers(session, list(current_server_ips))
             previous_server_ips = current_server_ips
+            previous_server_dates = current_dates_map
         await asyncio.sleep(CHECK_INTERVAL)
