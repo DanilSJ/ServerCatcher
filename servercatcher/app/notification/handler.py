@@ -15,8 +15,8 @@ from servercatcher.core.config import bot
 
 MSK = timezone(timedelta(hours=3))
 CHECK_INTERVAL = 3
-PASTEBIN_URL = "https://pastebin.com/raw/DnHHkrxx"
-# PASTEBIN_URL = "http://127.0.0.1:8000"
+# PASTEBIN_URL = "https://pastebin.com/raw/DnHHkrxx"
+PASTEBIN_URL = "http://127.0.0.1:8000"
 
 
 async def fetch_servers_from_link() -> list[dict]:
@@ -216,6 +216,15 @@ async def check_and_update_servers():
                     prev_start, prev_end = previous_server_dates[ip]
                     if prev_start != start_str or prev_end != end_str:
                         changed_date_ips.append(ip)
+                else:
+                    # Нет предыдущего состояния: если текущее end уже в прошлом — считаем как удаленный
+                    if end_str:
+                        try:
+                            end_dt_probe = datetime.strptime(end_str, "%d/%m/%Y").replace(tzinfo=MSK)
+                            if end_dt_probe < now:
+                                changed_date_ips.append(ip)
+                        except Exception:
+                            pass
             # Новые IP, которых не было в предыдущем опросе
             new_ips = list(current_server_ips - previous_server_ips)
             await notify_users_about_new_ips(session, new_ips, filtered_servers_data)
@@ -225,25 +234,54 @@ async def check_and_update_servers():
                 now = datetime.now(MSK)
                 chats = await get_all_chats(session)
                 for ip in changed_date_ips:
+                    # Если дата end изменилась в сторону увеличения (продлили), не считаем это удалением
+                    prev_start, prev_end = previous_server_dates.get(ip, (None, None))
+                    curr_start, curr_end = current_dates_map.get(ip, (None, None))
+                    prev_end_dt = None
+                    if prev_end:
+                        try:
+                            prev_end_dt = datetime.strptime(prev_end, "%d/%m/%Y").replace(tzinfo=MSK)
+                        except Exception:
+                            prev_end_dt = None
+                    curr_end_dt = None
+                    if curr_end:
+                        try:
+                            curr_end_dt = datetime.strptime(curr_end, "%d/%m/%Y").replace(tzinfo=MSK)
+                        except Exception:
+                            curr_end_dt = None
+                    # Если новое end находится в будущем — считаем, что сервер ещё активен, не удаляем
+                    if curr_end_dt and curr_end_dt >= now:
+                        continue
                     result = await session.execute(select(Server).where(Server.ip_adress == ip))
                     server = result.scalars().first()
-                    if not server or not server.is_active:
-                        continue
-                    start = server.start
+                    # Определяем дату старта для сообщения
+                    if server and server.start:
+                        start = server.start
+                    else:
+                        srv_cur = next((s for s in servers_data if s.get("ip") == ip), None)
+                        start = None
+                        if srv_cur:
+                            start_str_msg = srv_cur.get("start") or None
+                            if start_str_msg:
+                                try:
+                                    start = datetime.strptime(start_str_msg, "%d/%m/%Y").replace(tzinfo=MSK)
+                                except Exception:
+                                    start = None
                     if start and start.tzinfo is None:
                         start = start.replace(tzinfo=MSK)
                     days = abs((now - start).days) if start else "?"
-                    message = f"""❌ <b>УДАЛЕН СЕРВЕР!</b>\n\n🖥 IP-адрес: <code>{ip}</code>\n⏳ Срок рекламы: <b>{days} день</b>\n\n🗑 Дата удаления: <b>{now.strftime('%d.%m.%Y')} МСК</b>"""
+                    message = f"""❌ <b>УДАЛЕН СЕРВЕР!</b>\n\n🖥 IP-адрес: <code>{ip}</code>\n⏳ Срок рекламы: <b>{days} день</b>\n\n🗑 Дата удаления: <b>{now.strftime('%d.%m.%Y %H:%M:%S')} МСК</b>"""
                     for chat_id in chats:
                         try:
                             await bot.send_message(chat_id, message, parse_mode="HTML")
                         except Exception:
                             pass
-                    # Закрываем текущую историю и деактивируем
-                    history = ServerHistory(server_ip=ip, start=None, end=now)
-                    session.add(history)
-                    server.is_active = False
-                    server.end = now
+                    # Закрываем текущую историю и деактивируем (если сервер существует и активен)
+                    if server and server.is_active:
+                        history = ServerHistory(server_ip=ip, start=None, end=now)
+                        session.add(history)
+                        server.is_active = False
+                        server.end = now
                 await session.commit()
 
             new_servers = await add_new_servers_to_db(session, filtered_servers_data)
