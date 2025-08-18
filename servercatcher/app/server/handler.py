@@ -14,16 +14,31 @@ router = Router()
 @router.message(Command("main"))
 async def cmd_main(message: Message):
     servers_data = await fetch_servers_from_link()
-    now = datetime.now(MSK).strftime("%d.%m.%Y %H:%M:%S")
+    now_dt = datetime.now(MSK)
+    now = now_dt.strftime("%d.%m.%Y %H:%M:%S")
 
-    # Оставляем только те, у которых ip не пустой
-    servers_data = [srv for srv in servers_data if srv.get('ip')]
+    # Оставляем только те, у которых ip не пустой и дата старта уже наступила
+    filtered_servers = []
+    for srv in servers_data:
+        ip = srv.get('ip')
+        if not ip:
+            continue
+        start_str = srv.get('start') or None
+        if start_str:
+            try:
+                start_dt = datetime.strptime(start_str, "%d/%m/%Y").replace(tzinfo=MSK)
+            except Exception:
+                start_dt = now_dt
+        else:
+            start_dt = now_dt
+        if start_dt <= now_dt:
+            filtered_servers.append(srv)
 
-    if not servers_data:
+    if not filtered_servers:
         await message.answer(f"Сейчас нет активных серверов.\nОтчет сформирован: {now}")
         return
 
-    ip_list = "\n".join(f"<b>{idx+1}</b>. {srv.get('ip')}" for idx, srv in enumerate(servers_data))
+    ip_list = "\n".join(f"<b>{idx+1}</b>. {srv.get('ip')}" for idx, srv in enumerate(filtered_servers))
     text = f"""
 📌Рекламируемые серверы на главной:
 {ip_list}
