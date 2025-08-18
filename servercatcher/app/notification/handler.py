@@ -106,7 +106,7 @@ async def notify_users_about_new_servers(session: AsyncSession, servers: list[Se
     chats = await get_all_chats(session)
 
     for server in servers:
-        message = f"""✅ <b>Добавлен новый сервер!</b>
+        message = f"""✅ <b>ДОБАВЛЕН СЕРВЕР!</b>
 
 🖥 IP-адрес: <code>{server.ip_adress}</code>
 📝 Текст: <code>{server.text}</code>
