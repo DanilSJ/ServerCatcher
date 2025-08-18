@@ -19,13 +19,25 @@ dp = Dispatcher()
 
 
 async def main():
-
+    print("Starting bot...")
+    
+    # Включаем роутеры
     dp.include_router(start)
     dp.include_router(server)
-
+    
+    print("Routers included:")
+    print(f"- Start router: {start}")
+    print(f"- Server router: {server}")
+    
+    # Запускаем бота с поддержкой всех типов обновлений
+    print("Starting polling with chat_member updates...")
     await asyncio.gather(
-        dp.start_polling(bot),
-        check_and_update_servers()  # <-- сюда добавляем цикл
+        dp.start_polling(
+            bot, 
+            allowed_updates=["message", "chat_member", "my_chat_member"],
+            drop_pending_updates=True
+        ),
+        check_and_update_servers()
     )
 
 

@@ -36,7 +36,7 @@ class ServerHistory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     server_ip: Mapped[str] = mapped_column(String, ForeignKey("server.ip_adress"), nullable=False)
-    start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
     server = relationship("Server", backref="history")

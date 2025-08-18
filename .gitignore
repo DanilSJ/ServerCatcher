@@ -9,7 +9,7 @@ __pycache__/
 venv/
 ENV/
 env/
-
+fp.py
 # Poetry
 poetry.lock
 
