@@ -15,8 +15,8 @@ from servercatcher.core.config import bot
 
 MSK = timezone(timedelta(hours=3))
 CHECK_INTERVAL = 3
-PASTEBIN_URL = "https://pastebin.com/raw/DnHHkrxx"
-# PASTEBIN_URL = "http://127.0.0.1:8000"
+# PASTEBIN_URL = "https://pastebin.com/raw/DnHHkrxx"
+PASTEBIN_URL = "http://127.0.0.1:8000"
 
 
 async def fetch_servers_from_link() -> list[dict]:
@@ -56,6 +56,8 @@ async def add_new_servers_to_db(
 
                 server.is_active = True
                 server.end = None
+                # Обновляем старт текущего периода активности по данным источника
+                server.start = start
                 # Новый период активности
                 history = ServerHistory(server_ip=ip, start=start, end=None)
                 session.add(history)
@@ -79,6 +81,7 @@ async def add_new_servers_to_db(
             ip_adress=ip,
             text=srv.get("name", "Новый сервер"),
             is_active=True,
+            start=start,
         )
         session.add(new_server)
         history = ServerHistory(server_ip=ip, start=start, end=None)
