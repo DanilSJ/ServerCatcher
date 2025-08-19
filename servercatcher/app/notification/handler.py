@@ -15,8 +15,8 @@ from servercatcher.core.config import bot
 
 MSK = timezone(timedelta(hours=3))
 CHECK_INTERVAL = 3
-# PASTEBIN_URL = "https://pastebin.com/raw/DnHHkrxx"
-PASTEBIN_URL = "http://127.0.0.1:8000"
+PASTEBIN_URL = "https://pastebin.com/raw/DnHHkrxx"
+# PASTEBIN_URL = "http://127.0.0.1:8000"
 
 
 async def fetch_servers_from_link() -> list[dict]:
