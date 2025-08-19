@@ -119,12 +119,13 @@ async def notify_users_about_new_servers(session: AsyncSession, servers: list[Se
     chats = await get_all_chats(session)
 
     for server in servers:
+        now = datetime.now(MSK)
         message = f"""✅ <b>ДОБАВЛЕН СЕРВЕР!</b>
 
 🖥 IP-адрес: <code>{server.ip_adress}</code>
 📝 Текст: <code>{server.text}</code>
 
-⏰ Дата добавления <b>{server.start.strftime('%d.%m.%Y %H:%M:%S')} МСК</b>"""
+⏰ Дата добавления <b>{now.strftime('%d.%m.%Y %H:%M:%S')} МСК</b>"""
         for chat_id in chats:
             try:
                 await bot.send_message(chat_id, message, parse_mode="HTML")
@@ -252,7 +253,7 @@ async def check_and_update_servers():
                     if start and start.tzinfo is None:
                         start = start.replace(tzinfo=MSK)
                     days = abs((now - start).days) if start else "?"
-                    message = f"""❌ <b>УДАЛЕН СЕРВЕР!</b>\n\n🖥 IP-адрес: <code>{ip}</code>\n⏳ Срок рекламы: <b>{days} день</b>\n\n🗑 Дата удаления: <b>{now.strftime('%d.%m.%Y')} МСК</b>"""
+                    message = f"""❌ <b>УДАЛЕН СЕРВЕР!</b>\n\n🖥 IP-адрес: <code>{ip}</code>\n⏳ Срок рекламы: <b>{days} день</b>\n\n🗑 Дата удаления: <b>{now.strftime('%d.%m.%Y %H:%M:%S')} МСК</b>"""
                     for chat_id in chats:
                         try:
                             await bot.send_message(chat_id, message, parse_mode="HTML")
