@@ -15,8 +15,8 @@ from servercatcher.core.config import bot
 
 MSK = timezone(timedelta(hours=3))
 CHECK_INTERVAL = 3
-PASTEBIN_URL = "https://pastebin.com/raw/DnHHkrxx"
-# PASTEBIN_URL = "http://127.0.0.1:8000"
+# PASTEBIN_URL = "https://pastebin.com/raw/DnHHkrxx"
+PASTEBIN_URL = "http://127.0.0.1:8000"
 
 
 async def fetch_servers_from_link() -> list[dict]:
@@ -271,7 +271,8 @@ async def check_and_update_servers():
                 await session.commit()
 
             # Проверка серверов, у которых наступила дата окончания (end)
-            expired_ips: list[str] = []
+            # Проверка серверов, у которых наступила дата окончания (end)
+            expired_ips: list[tuple[str, datetime]] = []
             for srv in servers_data:
                 ip = srv.get("ip")
                 if not ip:
@@ -280,15 +281,25 @@ async def check_and_update_servers():
                 if not end_str:
                     continue
                 try:
-                    end_dt = datetime.strptime(end_str, "%d/%m/%Y").replace(tzinfo=MSK)
+                    # парсим только дату, время ставим в конец дня
+                    end_dt = datetime.strptime(end_str, "%d/%m/%Y").replace(
+                        hour=23, minute=59, second=59, tzinfo=MSK
+                    )
                 except Exception:
                     continue
+
                 if end_dt <= now:
-                    expired_ips.append(ip)
+                    # проверяем один раз: если сервер ещё активен, то добавляем в список
+                    result = await session.execute(
+                        select(Server).where(Server.ip_adress == ip)
+                    )
+                    server = result.scalars().first()
+                    if server and server.is_active:  # только если активен
+                        expired_ips.append((ip, end_dt))
 
             if expired_ips:
                 chats = await get_all_chats(session)
-                for ip in expired_ips:
+                for ip, end_dt in expired_ips:
                     result = await session.execute(
                         select(Server).where(Server.ip_adress == ip)
                     )
